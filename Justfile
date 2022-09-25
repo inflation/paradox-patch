@@ -1,7 +1,8 @@
 default: install
 
 build:
-    cargo build --release
+    cargo pgo test
+    cargo pgo optimize
 
 install: build
     cp target/release/steam-dlc ~/.local/bin/steam-dlc
