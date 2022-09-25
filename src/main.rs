@@ -1,4 +1,4 @@
-use std::{collections::HashMap, io::Write};
+use std::{collections::HashMap, io::Write, time::Duration};
 
 use clap::{Parser, ValueEnum};
 use clap_verbosity_flag::Verbosity;
@@ -7,7 +7,7 @@ use futures::TryStreamExt;
 use reqwest::{Client, StatusCode};
 use serde::Deserialize;
 
-static URL: &'static str = "https://store.steampowered.com/api/appdetails?appids=";
+static URL: &str = "https://store.steampowered.com/api/appdetails?appids=";
 
 #[derive(Clone, Copy, ValueEnum)]
 #[clap(rename_all = "lower")]
@@ -101,16 +101,16 @@ async fn main() -> Result<()> {
     let mut dlc = game.data.dlc.ok_or_else(|| eyre!("No DLC found"))?;
     dlc.sort();
 
-    let tasks: Vec<_> = futures::stream::FuturesOrdered::from_iter(dlc.into_iter().map(|d| {
+    let list: Vec<_> = futures::stream::FuturesOrdered::from_iter(dlc.into_iter().map(|d| {
         let c = client.clone();
-        tokio::spawn(async move {
-            let game = fetch_app(&c, d).await?;
-            Ok::<_, Report>(format!("{}={}", d, game.data.name))
-        })
+        async move {
+            fetch_app(&c, d)
+                .await
+                .map(|g| format!("{}={}", d, g.data.name))
+        }
     }))
     .try_collect()
     .await?;
-    let list = tasks.into_iter().collect::<Result<Vec<_>>>()?;
 
     println!("Found {} DLCs, saving to DLC.txt", list.len());
     tracing::info!("DLC = {list:#?}");
