@@ -11,6 +11,9 @@ use color_eyre::{eyre::eyre, Result};
 struct Args {
     /// DLC folder
     dlc: PathBuf,
+    /// Output file
+    #[arg(short, long, default_value = "DLC.txt")]
+    output: PathBuf,
 }
 
 fn main() -> Result<()> {
@@ -18,9 +21,9 @@ fn main() -> Result<()> {
 
     let args = Args::parse();
     let dlc = args.dlc;
-    let mut output = std::fs::File::create("DLC.txt")?;
-    let mut res = vec![];
+    let mut output = std::fs::File::create(args.output)?;
 
+    let mut files = vec![];
     for entry in std::fs::read_dir(dlc)? {
         let entry = entry?;
         if entry.file_type()?.is_dir() {
@@ -38,50 +41,44 @@ fn main() -> Result<()> {
             ));
 
             if path.exists() {
-                if let Some(line) = parse(path)? {
-                    res.push(line);
-                }
+                files.push(path);
             }
         }
     }
+    files.sort();
 
-    res.sort_by(|(id1, _), (id2, _)| id1.cmp(id2));
-    for (id, name) in res {
-        writeln!(output, "{}={}", id, name)?;
+    for dlc in files {
+        if let Some((id, name)) = parse(dlc) {
+            writeln!(output, "{}={}", id, name)?;
+        }
     }
 
     Ok(())
 }
 
-fn parse(path: PathBuf) -> Result<Option<(u32, String)>> {
-    let file = std::fs::File::open(&path)?;
+fn parse(path: PathBuf) -> Option<(u32, String)> {
+    let file = std::fs::File::open(&path).unwrap();
     let reader = std::io::BufReader::new(file);
     let mut id = 0;
     let mut name = String::new();
 
     for line in reader.lines() {
-        let line = line?;
+        let line = line.unwrap();
 
         let mut split = line.split('=');
-        let key = split
-            .next()
-            .map(|s| s.trim())
-            .ok_or_else(|| eyre!("invalid line: {:?}", line))?;
-        let val = split
-            .next()
-            .map(|s| s.trim().trim_matches('"'))
-            .ok_or_else(|| eyre!("invalid line: {:?}", line))?;
+        let key = split.next().map(|s| s.trim()).unwrap();
+        let val = split.next().map(|s| s.trim().trim_matches('"')).unwrap();
 
         if key == "steam_id" {
-            id = val.to_string().parse()?;
+            id = val.to_string().parse().unwrap();
         } else if key == "name" {
             name = val.to_string();
         }
     }
 
     if id == 0 || name.is_empty() {
-        Ok(None)
+        None
     } else {
-        Ok(Some((id, name)))
+        Some((id, name))
     }
 }
