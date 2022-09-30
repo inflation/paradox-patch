@@ -1,128 +1,87 @@
-use std::{collections::HashMap, io::Write, time::Duration};
+use std::{
+    io::{BufRead, Write},
+    path::PathBuf,
+};
 
-use clap::{Parser, ValueEnum};
-use clap_verbosity_flag::Verbosity;
-use color_eyre::{eyre::eyre, Report, Result};
-use futures::TryStreamExt;
-use reqwest::{Client, StatusCode};
-use serde::Deserialize;
-
-static URL: &str = "https://store.steampowered.com/api/appdetails?appids=";
-
-#[derive(Clone, Copy, ValueEnum)]
-#[clap(rename_all = "lower")]
-enum GameAbbr {
-    Eu4,
-    Hoi4,
-    Stellaris,
-    Ck3,
-}
-
-const fn game_id(game: GameAbbr) -> u32 {
-    match game {
-        GameAbbr::Eu4 => 236850,
-        GameAbbr::Hoi4 => 394360,
-        GameAbbr::Stellaris => 281990,
-        GameAbbr::Ck3 => 1158310,
-    }
-}
-
-#[derive(Debug, Deserialize)]
-struct GameList {
-    #[serde(flatten)]
-    games: HashMap<String, Game>,
-}
-
-#[derive(Debug, Deserialize)]
-struct Game {
-    data: Data,
-}
-
-#[derive(Debug, Deserialize)]
-struct Data {
-    name: String,
-    dlc: Option<Vec<u32>>,
-}
+use clap::Parser;
+use color_eyre::{eyre::eyre, Result};
 
 #[derive(Parser)]
-#[clap(arg_required_else_help(true))]
-/// Steam Store DLC List generator
+#[command(author, version, about)]
 struct Args {
-    /// Game Name Abbreviation
-    #[clap(value_enum)]
-    name: Option<GameAbbr>,
-    /// Custom Game ID
-    #[clap(long, short)]
-    id: Option<u32>,
-    /// Dry run, don't write to DLC.txt
-    #[clap(long, short)]
-    dry_run: bool,
-    #[clap(flatten)]
-    verbose: Verbosity,
+    /// DLC folder
+    dlc: PathBuf,
 }
 
-async fn fetch_app(client: &Client, id: u32) -> Result<Game> {
-    let res = client.get(&format!("{}{}", URL, id)).send().await?;
-    let games: GameList = match res.error_for_status() {
-        Ok(res) => res.json().await?,
-        Err(err) => match err.status() {
-            Some(StatusCode::TOO_MANY_REQUESTS) => {
-                tracing::error!("Too many requests, try again in 5 mins.");
-                std::process::exit(1);
-            }
-            _ => return Err(Report::new(err)),
-        },
-    };
-
-    match games.games.into_iter().next() {
-        Some((id_str, game)) if id == id_str.parse::<u32>()? => Ok(game),
-        _ => Err(eyre!("No game found for id: {}", id)),
-    }
-}
-
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
     color_eyre::install()?;
 
     let args = Args::parse();
+    let dlc = args.dlc;
+    let mut output = std::fs::File::create("DLC.txt")?;
+    let mut res = vec![];
 
-    tracing_subscriber::fmt()
-        .with_env_filter(args.verbose.log_level_filter().as_str())
-        .init();
+    for entry in std::fs::read_dir(dlc)? {
+        let entry = entry?;
+        if entry.file_type()?.is_dir() {
+            let name = entry
+                .file_name()
+                .into_string()
+                .map_err(|e| eyre!("invalid file name: {:?}", e))?;
 
-    let id = args
-        .id
-        .or_else(|| args.name.map(game_id))
-        .ok_or_else(|| eyre!("No game ID or abbreviation specified. Check -h for help."))?;
+            let mut path = entry.path();
+            path.push(format!(
+                "{}.dlc",
+                name.split('_')
+                    .next()
+                    .ok_or_else(|| eyre!("invalid file name: {:?}", name))?
+            ));
 
-    let client = reqwest::Client::new();
-
-    let game = fetch_app(&client, id).await?;
-    let mut dlc = game.data.dlc.ok_or_else(|| eyre!("No DLC found"))?;
-    dlc.sort();
-
-    let list: Vec<_> = futures::stream::FuturesOrdered::from_iter(dlc.into_iter().map(|d| {
-        let c = client.clone();
-        async move {
-            fetch_app(&c, d)
-                .await
-                .map(|g| format!("{}={}", d, g.data.name))
-        }
-    }))
-    .try_collect()
-    .await?;
-
-    println!("Found {} DLCs, saving to DLC.txt", list.len());
-    tracing::info!("DLC = {list:#?}");
-
-    if args.dry_run {
-        tracing::warn!("Dry run, not writing to DLC.txt");
-    } else {
-        let mut f = std::fs::File::create("DLC.txt")?;
-        for line in list {
-            writeln!(f, "{}", line)?;
+            if path.exists() {
+                if let Some(line) = parse(path)? {
+                    res.push(line);
+                }
+            }
         }
     }
 
+    res.sort_by(|(id1, _), (id2, _)| id1.cmp(id2));
+    for (id, name) in res {
+        writeln!(output, "{}={}", id, name)?;
+    }
+
     Ok(())
+}
+
+fn parse(path: PathBuf) -> Result<Option<(u32, String)>> {
+    let file = std::fs::File::open(&path)?;
+    let reader = std::io::BufReader::new(file);
+    let mut id = 0;
+    let mut name = String::new();
+
+    for line in reader.lines() {
+        let line = line?;
+
+        let mut split = line.split('=');
+        let key = split
+            .next()
+            .map(|s| s.trim())
+            .ok_or_else(|| eyre!("invalid line: {:?}", line))?;
+        let val = split
+            .next()
+            .map(|s| s.trim().trim_matches('"'))
+            .ok_or_else(|| eyre!("invalid line: {:?}", line))?;
+
+        if key == "steam_id" {
+            id = val.to_string().parse()?;
+        } else if key == "name" {
+            name = val.to_string();
+        }
+    }
+
+    if id == 0 || name.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some((id, name)))
+    }
 }
