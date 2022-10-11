@@ -4,8 +4,9 @@ use color_eyre::{
     eyre::{eyre, Context},
     Result,
 };
-use paradox_patch::{check_game, Game};
 use tracing::{info, warn};
+
+use crate::{check_game, Game};
 
 static URL: &str =
     "https://github.com/inflation/goldberg_emulator/releases/download/8b9ce58/libsteam_api.dylib";

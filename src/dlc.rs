@@ -8,8 +8,9 @@ use color_eyre::{
     eyre::{eyre, Context},
     Result,
 };
-use paradox_patch::{check_game, Game};
 use tracing::{info, warn};
+
+use crate::{check_game, Game};
 
 pub fn generate(target: Option<PathBuf>, output: Option<PathBuf>) -> Result<()> {
     let target = target.unwrap_or_default();
