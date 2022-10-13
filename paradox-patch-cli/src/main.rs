@@ -1,15 +1,13 @@
 #![deny(missing_docs)]
 //! A utility to generate dlc list for Paradox games
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 use clap_verbosity_flag::Verbosity;
 use color_eyre::Result;
+use paradox_patch::{generate, patch};
 use tracing_log::AsTrace;
-
-mod dlc;
-mod patch;
 
 #[derive(Parser)]
 #[command(author, version, about)]
@@ -51,34 +49,7 @@ fn main() -> Result<()> {
         .init();
 
     match args.command {
-        Command::Dlc { target, output } => dlc::generate(target, output),
-        Command::Patch { target, proxy } => patch::patch(target, proxy),
-    }
-}
-
-/// Recognized game list
-pub enum Game {
-    /// Europa Universalis IV
-    Eu4,
-    /// Hearts of Iron IV
-    Hoi4,
-    /// Stellaris
-    Stellaris,
-    /// Crusader Kings III
-    Ck3,
-}
-
-/// Check if the game is supported
-pub fn check_game(path: &Path) -> Option<Game> {
-    if path.ends_with("Europa Universalis IV") {
-        Some(Game::Eu4)
-    } else if path.ends_with("Hearts of Iron IV") {
-        Some(Game::Hoi4)
-    } else if path.ends_with("Stellaris") {
-        Some(Game::Stellaris)
-    } else if path.ends_with("Crusader Kings III") {
-        Some(Game::Ck3)
-    } else {
-        None
+        Command::Dlc { target, output } => generate(target, output),
+        Command::Patch { target, proxy } => patch(target, proxy),
     }
 }
