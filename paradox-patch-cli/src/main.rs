@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 use clap_verbosity_flag::Verbosity;
-use color_eyre::Result;
+use miette::IntoDiagnostic;
 use paradox_patch::{generate, patch};
 use tracing_log::AsTrace;
 
@@ -27,7 +27,7 @@ enum Command {
         /// Target folder
         target: Option<PathBuf>,
         /// Output file
-        #[arg(short, long)]
+        #[arg(short, long, action)]
         output: Option<PathBuf>,
     },
     /// Patch libsteam_api.dylib using goldberg_emulator
@@ -40,16 +40,14 @@ enum Command {
     },
 }
 
-fn main() -> Result<()> {
-    color_eyre::install()?;
-
+fn main() -> miette::Result<()> {
     let args = Args::parse();
     tracing_subscriber::fmt()
         .with_max_level(args.verbose.log_level_filter().as_trace())
         .init();
 
     match args.command {
-        Command::Dlc { target, output } => generate(target, output),
-        Command::Patch { target, proxy } => patch(target, proxy),
+        Command::Dlc { target, output } => generate(target, output).into_diagnostic(),
+        Command::Patch { target, proxy } => patch(target, proxy).into_diagnostic(),
     }
 }

@@ -2,5 +2,7 @@
 members = ["paradox-patch", "paradox-patch-cli", "paradox-patch-gui"]
 
 [profile.release]
+strip = true
 lto = true
 codegen-units = 1
+panic = "abort"

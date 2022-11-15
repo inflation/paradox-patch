@@ -1,9 +1,11 @@
 mod dlc;
+mod error;
 mod patch;
 
 use std::path::Path;
 
 pub use dlc::generate;
+pub use error::GenerateError;
 pub use patch::patch;
 
 /// Recognized game list

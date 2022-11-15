@@ -4,31 +4,27 @@ use std::{
     path::PathBuf,
 };
 
-use color_eyre::{
-    eyre::{eyre, Context},
-    Result,
-};
 use tracing::{info, warn};
 
-use crate::{check_game, Game};
+use crate::{check_game, Game, GenerateError};
 
-pub fn generate(target: Option<PathBuf>, output: Option<PathBuf>) -> Result<()> {
+pub fn generate(target: Option<PathBuf>, output: Option<PathBuf>) -> Result<(), GenerateError> {
     let target = target.unwrap_or_default();
-    let mut dlc = target.join("dlc");
 
     let dlc = {
+        let mut dlc = target.join("dlc");
         if !dlc.exists() {
             dlc.pop();
             dlc.push("game/dlc");
-            if !dlc.exists() {
-                return Err(eyre!("DLC folder does not exist"));
-            }
         }
         dlc
-    }
-    .canonicalize()
-    .wrap_err_with(|| eyre!("Failed to find absolute path of the DLC folder"))?;
-    info!("DLC folder: {}", dlc.display());
+    };
+
+    let dlc_target = dlc
+        .clone()
+        .canonicalize()
+        .map_err(|e| GenerateError::DlcFolderNotExists(e, dlc))?;
+    info!("DLC folder: {}", dlc_target.display());
 
     let output = output
         .or_else(|| {
@@ -39,37 +35,36 @@ pub fn generate(target: Option<PathBuf>, output: Option<PathBuf>) -> Result<()> 
                 })
                 .map(|s| target.join(s))
         })
-        .ok_or_else(|| eyre!("Failed to find output file"))?;
+        .ok_or(GenerateError::InvalidOutput)?;
     info!("Output file: {}", output.display());
 
-    output.parent().map(std::fs::create_dir_all).transpose()?;
-    let mut output_file = std::fs::File::create(&output)
-        .wrap_err_with(|| eyre!("Failed to create the output file: '{}'", output.display()))?;
+    let mut output_file = output
+        .parent()
+        .map(std::fs::create_dir_all)
+        .transpose()
+        .and_then(|_| std::fs::File::create(&output))
+        .map_err(|e| GenerateError::CreateOutputFileFailed(e, output.clone()))?;
 
     let mut files = vec![];
-    for entry in std::fs::read_dir(&dlc)
-        .wrap_err_with(|| eyre!("Failed to read directory: '{}'", dlc.display()))?
+    for entry in std::fs::read_dir(&dlc_target)
+        .map_err(|e| GenerateError::ReadDlcFolderFailed(e, dlc_target))?
         .flatten()
     {
         if let Ok(file_type) = entry.file_type() {
             if file_type.is_dir() {
-                let name = entry
-                    .file_name()
-                    .into_string()
-                    .map_err(|e| eyre!("invalid folder name: {:?}", e))?;
+                let name = entry.file_name();
+                let name = name.to_string_lossy();
 
                 let mut path = entry.path();
-                path.push(format!(
-                    "{}.dlc",
-                    name.split('_')
-                        .next()
-                        .ok_or_else(|| eyre!("invalid dlc file name: {:?}", name))?
-                ));
-
-                if path.exists() {
-                    files.push(path);
+                if let Some(id) = name.split('_').next() {
+                    path.push(format!("{}.dlc", id));
+                    if path.exists() {
+                        files.push(path);
+                    } else {
+                        warn!("DLC file does not exist: {}", path.display());
+                    }
                 } else {
-                    warn!("DLC file does not exist: {}", path.display());
+                    warn!("Invalid DLC folder: {}", path.display());
                 }
             }
         }
@@ -81,14 +76,14 @@ pub fn generate(target: Option<PathBuf>, output: Option<PathBuf>) -> Result<()> 
         .map(|d| {
             std::fs::File::open(d).map(|d| {
                 parse(d).map(|(id, name)| {
-                    info!("DLC: id={} name={}", id, name);
+                    info!("DLC: id='{}' name='{}'", id, name);
                     writeln!(output_file, "{}={}", id, name)
                 })
             })
         })
         .count();
 
-    println!("Found {} DLCs, write to '{}'", count, output.display());
+    eprintln!("Found {} DLCs, write to: '{}'", count, output.display());
 
     Ok(())
 }
