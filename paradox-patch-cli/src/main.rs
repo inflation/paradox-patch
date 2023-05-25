@@ -5,7 +5,6 @@ use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 use clap_verbosity_flag::Verbosity;
-use miette::IntoDiagnostic;
 use paradox_patch::{generate, patch};
 use tracing_log::AsTrace;
 
@@ -47,7 +46,9 @@ fn main() -> miette::Result<()> {
         .init();
 
     match args.command {
-        Command::Dlc { target, output } => generate(target, output).into_diagnostic(),
-        Command::Patch { target, proxy } => patch(target, proxy).into_diagnostic(),
+        Command::Dlc { target, output } => generate(target, output)?,
+        Command::Patch { target, proxy } => patch(target, proxy)?,
     }
+
+    Ok(())
 }

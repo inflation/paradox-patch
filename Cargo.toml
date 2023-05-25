@@ -1,8 +1,7 @@
 [workspace]
-members = ["paradox-patch", "paradox-patch-cli", "paradox-patch-gui"]
+members = ["paradox-patch", "paradox-patch-cli"]
 
 [profile.release]
 strip = true
 lto = true
 codegen-units = 1
-panic = "abort"
