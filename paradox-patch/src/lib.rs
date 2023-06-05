@@ -18,6 +18,8 @@ pub(crate) enum Game {
     Stellaris,
     /// Crusader Kings III
     Ck3,
+    /// Victoria 3
+    Vic3,
 }
 
 /// Check if the game is supported
@@ -30,6 +32,8 @@ pub(crate) fn check_game(path: &Path) -> Option<Game> {
         Some(Game::Stellaris)
     } else if path.ends_with("Crusader Kings III") {
         Some(Game::Ck3)
+    } else if path.ends_with("Victoria 3") {
+        Some(Game::Vic3)
     } else {
         None
     }

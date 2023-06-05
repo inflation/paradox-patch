@@ -6,7 +6,6 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bstr = "1.5.0"
 miette = "5.9.0"
 reqwest = { version = "0.11.18", features = ["blocking"] }
 thiserror = "1.0.40"

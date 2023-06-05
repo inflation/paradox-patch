@@ -21,6 +21,7 @@ pub fn patch(target: Option<PathBuf>, proxy: bool) -> Result<(), PatchError> {
         match check_game(&target_folder).ok_or(PatchError::GameNotRecognized)? {
             Game::Eu4 => "eu4.app/Contents/Frameworks/libsteam_api.dylib",
             Game::Hoi4 | Game::Stellaris | Game::Ck3 => "libsteam_api.dylib",
+            Game::Vic3 => "binaries/libsteam_api.dylib",
         },
     );
     if !lib_file.exists() {

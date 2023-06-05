@@ -43,6 +43,7 @@ fn main() -> miette::Result<()> {
     let args = Args::parse();
     tracing_subscriber::fmt()
         .with_max_level(args.verbose.log_level_filter().as_trace())
+        .with_writer(std::io::stderr)
         .init();
 
     match args.command {

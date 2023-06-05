@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use miette::Diagnostic;
+use miette::{Diagnostic, NamedSource, SourceSpan};
 use thiserror::Error;
 
 /// Errors when generate DLC list
@@ -26,6 +26,24 @@ pub enum GenerateError {
         help("Please check if the DLC folder has the right permission")
     )]
     ReadDlcFolderFailed(#[source] std::io::Error, PathBuf),
+
+    #[error("Failed to read DLC file: {1}")]
+    #[diagnostic(
+        code(generate::read_dlc_file_failed),
+        help("Please check if the DLC file has the right permission")
+    )]
+    ReadDlcFileFailed(#[source] std::io::Error, PathBuf),
+
+    #[error("Failed to parse the DLC file: {0}")]
+    #[diagnostic(
+        code(generate::failed_to_parse_dlc),
+        help("Please check if the DLC file has the correct format")
+    )]
+    ParseDlcFailed(
+        String,
+        #[source_code] NamedSource,
+        #[label("{0}")] Option<SourceSpan>,
+    ),
 
     #[error("Failed to create output DLC.txt file: {1}")]
     #[diagnostic(
