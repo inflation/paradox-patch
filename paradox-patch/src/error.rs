@@ -45,12 +45,12 @@ pub enum GenerateError {
         #[label("{0}")] Option<SourceSpan>,
     ),
 
-    #[error("Failed to create output DLC.txt file: {1}")]
+    #[error("Failed to write output to: {1}")]
     #[diagnostic(
         code(generate::create_output_file_failed),
-        help("Please check if the output DLC.txt file exists")
+        help("Please check if the output DLC.txt is writable")
     )]
-    CreateOutputFileFailed(#[source] std::io::Error, PathBuf),
+    WriteOutputFileFailed(#[source] std::io::Error, PathBuf),
 }
 
 /// Errors when download patching

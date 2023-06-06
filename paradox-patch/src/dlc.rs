@@ -21,7 +21,7 @@ pub fn generate(target: Option<PathBuf>, output: Option<PathBuf>) -> Result<(), 
         .clone()
         .canonicalize()
         .map_err(|e| GenerateError::DlcFolderNotExists(e, dlc))?;
-    info!("DLC folder: {}", dlc_target.display());
+    info!(dlc = ?dlc_target, "DLC folder");
 
     let output = output
         .or_else(|| {
@@ -34,50 +34,53 @@ pub fn generate(target: Option<PathBuf>, output: Option<PathBuf>) -> Result<(), 
                 .map(|s| target.join(s))
         })
         .ok_or(GenerateError::InvalidOutput)?;
-    info!("Output file: {}", output.display());
+    info!(?output, "Output file");
 
     let mut output_file = output
         .parent()
         .map(std::fs::create_dir_all)
         .transpose()
         .and_then(|_| std::fs::File::create(&output))
-        .map_err(|e| GenerateError::CreateOutputFileFailed(e, output.clone()))?;
+        .map_err(|e| GenerateError::WriteOutputFileFailed(e, output.clone()))?;
 
-    let mut files = vec![];
-    for entry in std::fs::read_dir(&dlc_target)
+    let mut files: Vec<PathBuf> = std::fs::read_dir(&dlc_target)
         .map_err(|e| GenerateError::ReadDlcFolderFailed(e, dlc_target))?
         .flatten()
-    {
-        if let Ok(file_type) = entry.file_type() {
-            if file_type.is_dir() {
-                let name = entry.file_name();
+        .filter_map(|entry| {
+            entry.file_type().ok().and_then(|t| {
+                if t.is_dir() {
+                    let name = entry.file_name();
 
-                let mut path = entry.path();
-                if let Some(id) = name.as_bytes().split(|&c| c == b'_').next() {
-                    path.push(OsStr::from_bytes(id));
-                    path.set_extension("dlc");
+                    let mut path = entry.path();
+                    if let Some(id) = name.as_bytes().split(|&c| c == b'_').next() {
+                        path.push(OsStr::from_bytes(id));
+                        path.set_extension("dlc");
 
-                    if path.exists() {
-                        files.push(path);
+                        if path.exists() {
+                            return Some(path);
+                        } else {
+                            warn!(?path, "DLC file does not exist");
+                        }
                     } else {
-                        warn!("DLC file does not exist: {}", path.display());
+                        warn!(?path, "Invalid DLC folder");
                     }
-                } else {
-                    warn!("Invalid DLC folder: {}", path.display());
                 }
-            }
-        }
-    }
+
+                None
+            })
+        })
+        .collect();
     files.sort();
 
     let count = files.len();
-    for file in files {
-        let (id, name) = parse(file)?;
-        info!("DLC: id='{id}' name='{name}'");
-        _ = writeln!(output_file, "{id}={name}");
-    }
-
-    eprintln!("Found {count} DLCs, write to: '{}'", output.display());
+    let output_str = files
+        .into_iter()
+        .map(|f| parse(f).map(|(id, name)| format!("{id}={name}")))
+        .collect::<Result<Vec<_>, GenerateError>>()?
+        .join("\n");
+    writeln!(output_file, "{}", output_str)
+        .map_err(|e| GenerateError::WriteOutputFileFailed(e, output.clone()))?;
+    println!("Found {count} DLCs, write to: '{output:?}'");
 
     Ok(())
 }
@@ -85,38 +88,35 @@ pub fn generate(target: Option<PathBuf>, output: Option<PathBuf>) -> Result<(), 
 fn parse(path: PathBuf) -> Result<(u32, String), GenerateError> {
     let file = std::fs::read_to_string(&path)
         .map_err(|e| GenerateError::ReadDlcFileFailed(e, path.clone()))?;
-    let mut id = None;
-    let mut name = None;
 
-    for line in file.lines() {
+    let (id, name) = file.lines().try_fold((0, String::new()), |mut acc, line| {
         let mut split = line.split(" = ");
-        let (key, val) = (split.next(), split.next());
 
-        if let Some(key) = key {
+        if let (Some(key), Some(val)) = (split.next(), split.next()) {
             if key == "name" {
-                name = val.map(|s| String::from(s.trim_matches('"')));
+                acc.1 = String::from(val.trim_matches('"'));
             } else if key == "steam_id" {
-                id = val
-                    .map(|s| {
-                        s.trim_matches('"').parse().map_err(|_| {
-                            let idx = val.unwrap().as_ptr() as usize - file.as_ptr() as usize;
-                            GenerateError::ParseDlcFailed(
-                                String::from("Wrong number format"),
-                                NamedSource::new(format!("{}", path.display()), file.clone()),
-                                Some(SourceSpan::new(idx.into(), s.len().into())),
-                            )
-                        })
-                    })
-                    .transpose()?;
+                acc.0 = val.trim_matches('"').parse().map_err(|_| {
+                    let idx = val.as_ptr() as usize - file.as_ptr() as usize;
+                    GenerateError::ParseDlcFailed(
+                        String::from("Wrong number format"),
+                        NamedSource::new(format!("{path:?}"), file.clone()),
+                        Some(SourceSpan::new(idx.into(), val.len().into())),
+                    )
+                })?
             }
         }
-    }
 
-    id.zip(name).ok_or_else(|| {
-        GenerateError::ParseDlcFailed(
+        Ok(acc)
+    })?;
+
+    if id == 0 || name.is_empty() {
+        return Err(GenerateError::ParseDlcFailed(
             String::from("Cannot find 'steam_id' or 'name'"),
-            NamedSource::new(format!("{}", path.display()), file.clone()),
+            NamedSource::new(format!("{path:?}"), file),
             None,
-        )
-    })
+        ));
+    }
+    info!(id, name, "Found DLC");
+    Ok((id, name))
 }

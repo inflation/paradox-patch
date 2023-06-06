@@ -1,6 +1,6 @@
 use std::{borrow::Cow, path::PathBuf};
 
-use tracing::{info, warn};
+use tracing::info;
 
 use crate::{check_game, error::PatchError, Game};
 
@@ -28,7 +28,7 @@ pub fn patch(target: Option<PathBuf>, proxy: bool) -> Result<(), PatchError> {
         return Err(PatchError::LibNotExists(lib_file));
     }
 
-    info!("Patching '{}'...", lib_file.display());
+    info!(file = ?lib_file, "Patching...");
 
     let result = reqwest::blocking::get(url.as_ref())
         .and_then(|d| d.bytes())
@@ -40,16 +40,14 @@ pub fn patch(target: Option<PathBuf>, proxy: bool) -> Result<(), PatchError> {
         std::fs::rename(&lib_file, &backup_file)
             .map_err(|e| PatchError::BackupFailed(e, backup_file))?;
     } else {
-        warn!(
-            "Library file '{}' already backed up to '{}'. Skipping...",
-            lib_file.display(),
-            backup_file.display()
+        eprintln!(
+            "Library file '{lib_file:?}' already backed up to '{backup_file:?}'. Skipping..."
         );
     }
 
     std::fs::write(&lib_file, result).map_err(PatchError::PatchFailed)?;
 
-    println!("Patched '{}' successfully!", lib_file.display());
+    println!("Patched '{lib_file:?}' successfully!");
 
     Ok(())
 }
